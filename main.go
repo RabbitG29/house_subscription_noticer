@@ -85,8 +85,9 @@ func runOnce(client *api.Client, mailer *notify.Email, seen *store.Store, region
 
 		subject := fmt.Sprintf("🏠 신규 청약 공고: %s", l.HouseName)
 		body := fmt.Sprintf(
-			"공급위치: %s\n총 공급세대수: %d세대\n모집공고일: %s\n접수기간: %s ~ %s\n%s",
-			l.SupplyAddress, l.TotalSupplyUnits, l.NoticeDate, l.ReceiptStart, l.ReceiptEnd, l.HomepageURL,
+			"공급위치: %s\n주택유형: %s (%s)\n총 공급세대수: %d세대\n모집공고일: %s\n접수기간: %s ~ %s\n당첨자발표일: %s\n%s",
+			l.SupplyAddress, l.HouseTypeName, l.HouseDetailType, l.TotalSupplyUnits,
+			l.NoticeDate, l.ReceiptStart, l.ReceiptEnd, l.WinnerAnnounceDate, l.HomepageURL,
 		)
 		if err := mailer.Send(subject, body); err != nil {
 			log.Printf("알림 전송 실패 (%s): %v — 다음 폴링에서 재시도합니다", l.HouseName, err)

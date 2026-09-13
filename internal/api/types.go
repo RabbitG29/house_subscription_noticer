@@ -12,7 +12,8 @@ type AptListing struct {
 	HouseName          string `json:"HOUSE_NM"`              // 주택명
 	RegionName         string `json:"SUBSCRPT_AREA_CODE_NM"` // 공급지역명 (예: "경기") — 시/도 단위
 	SupplyAddress      string `json:"HSSPLY_ADRES"`          // 공급위치 상세주소 (예: "경기도 수원시 권선구 ...") — 시/구 단위 필터링에 사용
-	HouseTypeName      string `json:"HOUSE_SECD_NM"`         // 주택 대분류 (APT/오피스텔 등 — "민영/국민" 구분은 HOUSE_DTL_SECD_NM)
+	HouseTypeName      string `json:"HOUSE_SECD_NM"`         // 주택 대분류 (APT/오피스텔 등)
+	HouseDetailType    string `json:"HOUSE_DTL_SECD_NM"`     // 분양 유형 (민영/국민 등)
 	NoticeDate         string `json:"RCRIT_PBLANC_DE"`       // 모집공고일 (YYYY-MM-DD)
 	TotalSupplyUnits   int    `json:"TOT_SUPLY_HSHLDCO"`     // 총 공급세대수
 	ReceiptStart       string `json:"RCEPT_BGNDE"`           // 청약접수 시작일
