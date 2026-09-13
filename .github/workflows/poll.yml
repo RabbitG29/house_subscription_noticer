@@ -1,0 +1,44 @@
+name: 청약 알림봇 폴링
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # 매 6시간마다 (UTC 기준)
+  workflow_dispatch: {} # 수동 실행용
+
+permissions:
+  contents: write # seen.json 커밋을 위해 필요
+
+concurrency:
+  group: apply-alert-bot-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: 단발 폴링 실행
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          REGION_FILTER: ${{ vars.REGION_FILTER }}
+          SEEN_DB_PATH: ./seen.json
+          RUN_ONCE: "true"
+        run: go run .
+
+      - name: seen.json 변경사항 커밋
+        run: |
+          git add seen.json
+          if ! git diff --cached --quiet -- seen.json; then
+            git config user.name "apply-alert-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git commit -m "chore: seen.json 업데이트 [skip ci]"
+            git push
+          fi
