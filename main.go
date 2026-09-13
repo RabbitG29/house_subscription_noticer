@@ -23,6 +23,12 @@ func main() {
 	pollInterval := parseDurationOr(os.Getenv("POLL_INTERVAL"), 6*time.Hour)
 	runOnceOnly := os.Getenv("RUN_ONCE") == "true"
 
+	loc, locErr := time.LoadLocation("Asia/Seoul")
+	if locErr != nil {
+		log.Printf("타임존 로드 실패, UTC로 대체합니다: %v", locErr)
+		loc = time.UTC
+	}
+
 	client := api.NewClient(serviceKey)
 	mailer := &notify.Email{
 		Host:     envOr("SMTP_HOST", "smtp.naver.com"),
@@ -40,22 +46,22 @@ func main() {
 
 	if runOnceOnly {
 		log.Printf("청약 알림봇 단발 실행(RUN_ONCE) — 지역 필터: %v", regionFilter)
-		runOnce(client, mailer, seen, regionFilter)
+		runOnce(client, mailer, seen, regionFilter, loc)
 		return
 	}
 
 	log.Printf("청약 알림봇 시작 — 지역 필터: %v, 폴링 주기: %s", regionFilter, pollInterval)
 
-	runOnce(client, mailer, seen, regionFilter)
+	runOnce(client, mailer, seen, regionFilter, loc)
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		runOnce(client, mailer, seen, regionFilter)
+		runOnce(client, mailer, seen, regionFilter, loc)
 	}
 }
 
-func runOnce(client *api.Client, mailer *notify.Email, seen *store.Store, regionFilter []string) {
+func runOnce(client *api.Client, mailer *notify.Email, seen *store.Store, regionFilter []string, loc *time.Location) {
 	listings, err := client.FetchAllAptListings()
 	if err != nil {
 		log.Printf("API 조회 실패: %v", err)
@@ -68,6 +74,9 @@ func runOnce(client *api.Client, mailer *notify.Email, seen *store.Store, region
 	newCount := 0
 	for _, l := range listings {
 		if !matchesRegion(l, regionFilter) {
+			continue
+		}
+		if !matchesDate(l, loc) {
 			continue
 		}
 		if seen.Has(l.AnnouncementNo) {
@@ -112,6 +121,20 @@ func matchesRegion(l api.AptListing, filters []string) bool {
 			return true
 		}
 	}
+	return false
+}
+
+// matchesDate는 현재 날짜보다 청약 접수 종료일이 같거나 미래인지 확인합니다.
+func matchesDate(l api.AptListing, loc *time.Location) bool {
+	now := time.Now().In(loc)
+	lastDate, err := time.ParseInLocation("2006-01-02", l.ReceiptEnd, loc)
+	if err != nil {
+		return true
+	}
+	if now.Before(lastDate.Add(24 * time.Hour)) {
+		return true
+	}
+
 	return false
 }
 
