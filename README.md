@@ -51,7 +51,7 @@ go run .
 개인 서버/라즈베리파이 없이도 돌릴 수 있고, 사내(NC소프트) 인프라를
 쓰지 않는다는 제약과도 맞아서 GitHub Actions의 scheduled workflow로
 구동하도록 구성했습니다 (`.github/workflows/poll.yml`, 매 6시간 실행).
-중복 알림 방지용 `seen.json`은 매 실행 후 변경이 있으면 워크플로우가
+중복 알림 방지용 `seen.json`과 `competition-seen.json`은 매 실행 후 변경이 있으면 워크플로우가
 직접 리포지토리에 커밋합니다.
 
 설정 방법:
@@ -87,3 +87,13 @@ gh variable set REGION_FILTER --body "경기,수원,용인"
   마감 후 결과 확인용, 엔드포인트는 `ApplyhomeInfoDetailSvc` 계열
   네이밍 규칙을 참고해 Swagger에서 확인 — 추측 금지)
 - JSON 파일 → SQLite로 교체 (동시 실행이나 이력 조회가 필요해지면)
+
+## 경쟁률 알림
+
+접수가 끝난 관심 지역 공고에 대해 일반공급 경쟁률(`getAPTLttotPblancCmpet`)과
+특별공급 신청현황(`getAPTSpsplyReqstStus`)을 공고당 메일 한 통으로 보냅니다.
+
+- 접수 종료일 **다음 날부터 14일 동안**만 대상입니다. 처음 실행해도 과거
+  공고의 경쟁률이 한꺼번에 발송되지 않습니다.
+- 경쟁률이 아직 집계되지 않았으면 기록하지 않고 다음 폴링에서 재시도합니다.
+- 발송한 공고는 `competition-seen.json`(`COMPETITION_SEEN_DB_PATH`)에 기록합니다.

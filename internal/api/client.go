@@ -9,11 +9,18 @@ import (
 	"time"
 )
 
-const detailBase = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/"
+const (
+	detailBase = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/"
+	// 경쟁률/특별공급 신청현황은 분양정보와 다른 서비스(ApplyhomeInfoCmpetRtSvc)지만
+	// 같은 서비스키로 호출됩니다.
+	cmpetBase = "https://api.odcloud.kr/api/ApplyhomeInfoCmpetRtSvc/v1/"
+)
 
 const (
-	aptEndpoint      = detailBase + "getAPTLttotPblancDetail"
-	aptModelEndpoint = detailBase + "getAPTLttotPblancMdl"
+	aptEndpoint       = detailBase + "getAPTLttotPblancDetail"
+	aptModelEndpoint  = detailBase + "getAPTLttotPblancMdl"
+	aptCmpetEndpoint  = cmpetBase + "getAPTLttotPblancCmpet"
+	aptSpsplyEndpoint = cmpetBase + "getAPTSpsplyReqstStus"
 )
 
 type Client struct {
@@ -58,21 +65,39 @@ func (c *Client) FetchAllAptListings() ([]AptListing, error) {
 }
 
 // FetchModelsByAnnouncement는 공고번호 하나에 딸린 주택형별 정보
-// (getAPTLttotPblancMdl)를 가져옵니다. 이 엔드포인트는 전체가 1만 건이 넘기
-// 때문에 전체를 받지 않고 서버 쪽 필터 cond[PBLANC_NO::EQ]로 해당 공고만
-// 조회합니다. 한 공고의 주택형은 많아야 수십 개라 perPage=100 한 번이면
-// 충분하지만, 안전하게 페이지네이션도 처리합니다.
+// (getAPTLttotPblancMdl)를 가져옵니다.
 func (c *Client) FetchModelsByAnnouncement(announcementNo string) ([]AptModel, error) {
+	return fetchByAnnouncement[AptModel](c, aptModelEndpoint, announcementNo)
+}
+
+// FetchCompetitionByAnnouncement는 공고 하나의 일반공급 경쟁률
+// (getAPTLttotPblancCmpet)을 주택형 × 순위 × 거주지역 행 단위로 가져옵니다.
+// 접수 전이거나 아직 집계되지 않은 공고는 빈 슬라이스가 돌아옵니다.
+func (c *Client) FetchCompetitionByAnnouncement(announcementNo string) ([]AptCompetition, error) {
+	return fetchByAnnouncement[AptCompetition](c, aptCmpetEndpoint, announcementNo)
+}
+
+// FetchSpecialStatusByAnnouncement는 공고 하나의 특별공급 신청현황
+// (getAPTSpsplyReqstStus)을 주택형 단위 행으로 가져옵니다.
+func (c *Client) FetchSpecialStatusByAnnouncement(announcementNo string) ([]AptSpecialStatus, error) {
+	return fetchByAnnouncement[AptSpecialStatus](c, aptSpsplyEndpoint, announcementNo)
+}
+
+// fetchByAnnouncement는 세 엔드포인트가 공유하는 "공고번호 하나만 조회" 로직입니다.
+// 이 엔드포인트들은 전체가 1만~5만 건이라 전체를 받지 않고 서버 쪽 필터
+// cond[PBLANC_NO::EQ]로 해당 공고만 조회합니다. 한 공고의 행은 많아야 수십~백
+// 개라 perPage=100 한 번이면 충분하지만, 안전하게 페이지네이션도 처리합니다.
+func fetchByAnnouncement[T any](c *Client, endpoint, announcementNo string) ([]T, error) {
 	const perPage = 100
 	cond := url.Values{}
 	cond.Set("cond[PBLANC_NO::EQ]", announcementNo)
 
-	var all []AptModel
+	var all []T
 	page := 1
 	for {
-		resp, err := fetchPage[AptModel](c, aptModelEndpoint, cond, page, perPage)
+		resp, err := fetchPage[T](c, endpoint, cond, page, perPage)
 		if err != nil {
-			return nil, fmt.Errorf("fetch models of %s page %d: %w", announcementNo, page, err)
+			return nil, fmt.Errorf("fetch %s of %s page %d: %w", endpoint, announcementNo, page, err)
 		}
 		all = append(all, resp.Data...)
 

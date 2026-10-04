@@ -30,15 +30,17 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           REGION_FILTER: ${{ vars.REGION_FILTER }}
           SEEN_DB_PATH: ./seen.json
+          COMPETITION_SEEN_DB_PATH: ./competition-seen.json
           RUN_ONCE: "true"
         run: go run .
 
-      - name: seen.json 변경사항 커밋
+      - name: 상태 파일(seen.json, competition-seen.json) 변경사항 커밋
         run: |
           git add seen.json
-          if ! git diff --cached --quiet -- seen.json; then
+          [ -f competition-seen.json ] && git add competition-seen.json
+          if ! git diff --cached --quiet -- seen.json competition-seen.json; then
             git config user.name "apply-alert-bot"
             git config user.email "actions@users.noreply.github.com"
-            git commit -m "chore: seen.json 업데이트 [skip ci]"
+            git commit -m "chore: 상태 파일 업데이트 [skip ci]"
             git push
           fi

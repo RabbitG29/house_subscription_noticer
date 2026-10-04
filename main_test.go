@@ -140,3 +140,38 @@ func TestMatchesDate(t *testing.T) {
 		})
 	}
 }
+
+func TestCompetitionDue(t *testing.T) {
+	loc, _ := time.LoadLocation("Asia/Seoul")
+	at := func(s string) time.Time {
+		tm, err := time.ParseInLocation("2006-01-02 15:04", s, loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	l := api.AptListing{ReceiptEnd: "2026-10-14"}
+
+	tests := []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{"종료 당일은 아직", at("2026-10-14 23:59"), false},
+		{"종료 다음 날 0시부터", at("2026-10-15 00:00"), true},
+		{"창 마지막 날", at("2026-10-28 23:59"), true},
+		{"창 밖(15일째)", at("2026-10-29 00:00"), false},
+		{"접수 중", at("2026-10-10 12:00"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := competitionDue(l, tc.now, loc); got != tc.want {
+				t.Errorf("competitionDue(now=%v) = %v, want %v", tc.now, got, tc.want)
+			}
+		})
+	}
+
+	if competitionDue(api.AptListing{ReceiptEnd: ""}, at("2026-10-15 00:00"), loc) {
+		t.Error("종료일을 파싱할 수 없으면 대상에서 빠져야 함")
+	}
+}

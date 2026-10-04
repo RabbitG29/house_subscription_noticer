@@ -106,3 +106,127 @@ func formatHouseType(raw string) string {
 	}
 	return strconv.FormatFloat(f, 'f', -1, 64) + raw[i:]
 }
+
+// buildCompetitionBody는 접수가 끝난 공고의 경쟁률 메일 본문을 만듭니다.
+// 특별공급 신청현황은 부가 정보라 specials가 비어 있으면 그 섹션만 생략합니다.
+func buildCompetitionBody(l api.AptListing, comps []api.AptCompetition, specials []api.AptSpecialStatus) string {
+	body := fmt.Sprintf("공급위치: %s\n접수기간: %s ~ %s\n당첨자발표일: %s\n%s\n\n%s",
+		l.SupplyAddress, l.ReceiptStart, l.ReceiptEnd, l.WinnerAnnounceDate, l.HomepageURL,
+		formatCompetition(comps))
+	if len(specials) > 0 {
+		body += "\n\n" + formatSpecialStatus(specials)
+	}
+	return body
+}
+
+// formatCompetition은 일반공급 경쟁률을 주택형별 블록으로 묶습니다. 접수가 0건인
+// 행(예: 1순위에서 마감돼 접수가 없는 2순위)은 의미가 없어 뺍니다.
+// 주택형은 API가 내려준 순서를 그대로 유지합니다.
+func formatCompetition(comps []api.AptCompetition) string {
+	var order []string
+	byType := make(map[string][]api.AptCompetition)
+	for _, c := range comps {
+		if _, ok := byType[c.HouseType]; !ok {
+			order = append(order, c.HouseType)
+		}
+		byType[c.HouseType] = append(byType[c.HouseType], c)
+	}
+
+	var b strings.Builder
+	b.WriteString("[일반공급 경쟁률]")
+	for _, ht := range order {
+		rows := byType[ht]
+		fmt.Fprintf(&b, "\n\n■ %s (일반공급 %d세대)", formatHouseType(ht), rows[0].SupplyUnits)
+		printed := 0
+		for _, c := range rows {
+			if strings.TrimSpace(c.RequestCount) == "0" {
+				continue
+			}
+			fmt.Fprintf(&b, "\n  %d순위 %s: 접수 %s건 · %s",
+				c.Rank, c.ResideName, c.RequestCount, formatRate(c.Rate))
+			printed++
+		}
+		if printed == 0 {
+			b.WriteString("\n  접수 없음")
+		}
+	}
+	return b.String()
+}
+
+// formatRate는 경쟁률 원문을 읽기 쉽게 바꿉니다. "7.28" → "7.28:1",
+// "(△1)" → "1세대 미달", "-"(상위 지역에서 마감되어 산정 안 됨)는 그대로 둡니다.
+func formatRate(rate string) string {
+	rate = strings.TrimSpace(rate)
+	switch {
+	case rate == "" || rate == "-":
+		return "경쟁률 미산정"
+	case strings.HasPrefix(rate, "(△") && strings.HasSuffix(rate, ")"):
+		return strings.TrimSuffix(strings.TrimPrefix(rate, "(△"), ")") + "세대 미달"
+	default:
+		if _, err := strconv.ParseFloat(rate, 64); err == nil {
+			return rate + ":1"
+		}
+		return rate
+	}
+}
+
+// specialRow는 특별공급 유형 하나의 공급세대수와 거주지역별 접수건수입니다.
+type specialRow struct {
+	name                 string
+	units                int
+	local, state, others int
+}
+
+func specialRows(s api.AptSpecialStatus) []specialRow {
+	return []specialRow{
+		{"다자녀", s.MultiChildUnits, s.MultiChildLocal, s.MultiChildState, s.MultiChildOther},
+		{"신혼부부", s.NewlywedUnits, s.NewlywedLocal, s.NewlywedState, s.NewlywedOther},
+		{"생애최초", s.FirstLifeUnits, s.FirstLifeLocal, s.FirstLifeState, s.FirstLifeOther},
+		{"노부모부양", s.OldParentsUnits, s.OldParentsLocal, s.OldParentsState, s.OldParentsOther},
+		{"청년", s.YoungUnits, s.YoungLocal, s.YoungState, s.YoungOther},
+		{"신생아", s.NewbornUnits, s.NewbornLocal, s.NewbornState, s.NewbornOther},
+	}
+}
+
+// formatSpecialStatus는 특별공급 신청현황을 주택형별로, 세대수나 접수가 있는
+// 유형만 표시합니다. 접수 합계를 공급세대수로 나눈 값은 API가 주는 공식
+// 경쟁률이 아니라 대략적인 참고치입니다(수치가 소수 첫째 자리).
+func formatSpecialStatus(specials []api.AptSpecialStatus) string {
+	var b strings.Builder
+	b.WriteString("[특별공급 신청현황]")
+	for _, s := range specials {
+		fmt.Fprintf(&b, "\n\n■ %s (특별공급 %d세대)", formatHouseType(s.HouseType), s.TotalUnits)
+		lines := 0
+		for _, r := range specialRows(s) {
+			total := r.local + r.state + r.others
+			if r.units == 0 && total == 0 {
+				continue
+			}
+			fmt.Fprintf(&b, "\n  %s %d세대: 접수 %d건 (해당지역 %d, 해당 시·도 %d, 기타 %d)%s",
+				r.name, r.units, total, r.local, r.state, r.others, approxRate(total, r.units))
+			lines++
+		}
+		if s.InstitutionUnits > 0 || s.InstitutionDecided+s.InstitutionPrepared > 0 {
+			fmt.Fprintf(&b, "\n  기관추천 %d세대: 결정 %d건, 준비 %d건",
+				s.InstitutionUnits, s.InstitutionDecided, s.InstitutionPrepared)
+			lines++
+		}
+		if s.TransferUnits > 0 || s.TransferCount > 0 {
+			fmt.Fprintf(&b, "\n  이전기관 %d세대: 접수 %d건%s",
+				s.TransferUnits, s.TransferCount, approxRate(s.TransferCount, s.TransferUnits))
+			lines++
+		}
+		if lines == 0 {
+			b.WriteString("\n  접수 없음")
+		}
+	}
+	return b.String()
+}
+
+// approxRate는 접수건수/공급세대수를 " · 약 3.5:1"로 만들고, 세대수가 0이면 빈 문자열입니다.
+func approxRate(count, units int) string {
+	if units <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · 약 %.1f:1", float64(count)/float64(units))
+}
