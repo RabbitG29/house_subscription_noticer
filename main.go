@@ -83,12 +83,15 @@ func runOnce(client *api.Client, mailer *notify.Email, seen *store.Store, region
 			continue
 		}
 
+		// 주택형별 정보(특공 세대수·분양가)는 부가 정보라, 조회에 실패해도
+		// 공고 알림 자체는 막지 않고 본문에 실패 사실만 남깁니다.
+		models, modelErr := client.FetchModels(string(l.HouseManageNo), l.AnnouncementNo)
+		if modelErr != nil {
+			log.Printf("주택형 조회 실패 (%s): %v", l.HouseName, modelErr)
+		}
+
 		subject := fmt.Sprintf("🏠 신규 청약 공고: %s", l.HouseName)
-		body := fmt.Sprintf(
-			"공급위치: %s\n주택유형: %s (%s)\n총 공급세대수: %d세대\n모집공고일: %s\n접수기간: %s ~ %s\n당첨자발표일: %s\n%s",
-			l.SupplyAddress, l.HouseTypeName, l.HouseDetailType, l.TotalSupplyUnits,
-			l.NoticeDate, l.ReceiptStart, l.ReceiptEnd, l.WinnerAnnounceDate, l.HomepageURL,
-		)
+		body := formatBody(l, models, modelErr)
 		if err := mailer.Send(subject, body); err != nil {
 			log.Printf("알림 전송 실패 (%s): %v — 다음 폴링에서 재시도합니다", l.HouseName, err)
 			continue
