@@ -9,7 +9,12 @@ import (
 	"time"
 )
 
-const aptEndpoint = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail"
+const detailBase = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/"
+
+const (
+	aptEndpoint      = detailBase + "getAPTLttotPblancDetail"
+	aptModelEndpoint = detailBase + "getAPTLttotPblancMdl"
+)
 
 type Client struct {
 	ServiceKey string
@@ -38,7 +43,7 @@ func (c *Client) FetchAllAptListings() ([]AptListing, error) {
 
 	page := 1
 	for {
-		resp, err := c.fetchPage(page, perPage)
+		resp, err := fetchPage[AptListing](c, aptEndpoint, nil, page, perPage)
 		if err != nil {
 			return nil, fmt.Errorf("fetch page %d: %w", page, err)
 		}
@@ -52,13 +57,42 @@ func (c *Client) FetchAllAptListings() ([]AptListing, error) {
 	return all, nil
 }
 
-func (c *Client) fetchPage(page, perPage int) (*apiResponse, error) {
-	body, err := c.fetchPageRaw(page, perPage)
+// FetchModelsByAnnouncement는 공고번호 하나에 딸린 주택형별 정보
+// (getAPTLttotPblancMdl)를 가져옵니다. 이 엔드포인트는 전체가 1만 건이 넘기
+// 때문에 전체를 받지 않고 서버 쪽 필터 cond[PBLANC_NO::EQ]로 해당 공고만
+// 조회합니다. 한 공고의 주택형은 많아야 수십 개라 perPage=100 한 번이면
+// 충분하지만, 안전하게 페이지네이션도 처리합니다.
+func (c *Client) FetchModelsByAnnouncement(announcementNo string) ([]AptModel, error) {
+	const perPage = 100
+	cond := url.Values{}
+	cond.Set("cond[PBLANC_NO::EQ]", announcementNo)
+
+	var all []AptModel
+	page := 1
+	for {
+		resp, err := fetchPage[AptModel](c, aptModelEndpoint, cond, page, perPage)
+		if err != nil {
+			return nil, fmt.Errorf("fetch models of %s page %d: %w", announcementNo, page, err)
+		}
+		all = append(all, resp.Data...)
+
+		if page*perPage >= resp.MatchCount || len(resp.Data) == 0 {
+			break
+		}
+		page++
+	}
+	return all, nil
+}
+
+// fetchPage는 메서드가 될 수 없습니다 — Go는 메서드에 타입 파라미터(제네릭)를
+// 붙이는 것을 허용하지 않아서, Client를 첫 인자로 받는 일반 함수로 둡니다.
+func fetchPage[T any](c *Client, endpoint string, extra url.Values, page, perPage int) (*apiResponse[T], error) {
+	body, err := c.fetchRaw(endpoint, extra, page, perPage)
 	if err != nil {
 		return nil, err
 	}
 
-	var out apiResponse
+	var out apiResponse[T]
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
@@ -69,16 +103,21 @@ func (c *Client) fetchPage(page, perPage int) (*apiResponse, error) {
 // It exists so callers (see cmd/inspect) can inspect the API's actual field
 // names before trusting the AptListing struct tags to match them.
 func (c *Client) FetchPageRaw(page, perPage int) ([]byte, error) {
-	return c.fetchPageRaw(page, perPage)
+	return c.fetchRaw(aptEndpoint, nil, page, perPage)
 }
 
-func (c *Client) fetchPageRaw(page, perPage int) ([]byte, error) {
+func (c *Client) fetchRaw(endpoint string, extra url.Values, page, perPage int) ([]byte, error) {
 	q := url.Values{}
+	for k, vs := range extra {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
 	q.Set("serviceKey", c.ServiceKey)
 	q.Set("page", fmt.Sprintf("%d", page))
 	q.Set("perPage", fmt.Sprintf("%d", perPage))
 
-	reqURL := aptEndpoint + "?" + q.Encode()
+	reqURL := endpoint + "?" + q.Encode()
 
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
