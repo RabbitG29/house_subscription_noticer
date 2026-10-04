@@ -84,11 +84,13 @@ func runOnce(client *api.Client, mailer *notify.Email, seen *store.Store, region
 		}
 
 		subject := fmt.Sprintf("🏠 신규 청약 공고: %s", l.HouseName)
-		body := fmt.Sprintf(
-			"공급위치: %s\n주택유형: %s (%s)\n총 공급세대수: %d세대\n모집공고일: %s\n접수기간: %s ~ %s\n당첨자발표일: %s\n%s",
-			l.SupplyAddress, l.HouseTypeName, l.HouseDetailType, l.TotalSupplyUnits,
-			l.NoticeDate, l.ReceiptStart, l.ReceiptEnd, l.WinnerAnnounceDate, l.HomepageURL,
-		)
+		// 주택형별 정보는 부가 정보라서, 조회에 실패해도 공고 알림 자체는 보냅니다.
+		// (실패하면 seen에 기록되므로 다음 폴링에서 재시도되지 않는다는 점은 감수)
+		models, err := client.FetchModelsByAnnouncement(l.AnnouncementNo)
+		if err != nil {
+			log.Printf("주택형별 정보 조회 실패 (%s) — 기본 정보만 발송합니다: %v", l.HouseName, err)
+		}
+		body := buildBody(l, models)
 		if err := mailer.Send(subject, body); err != nil {
 			log.Printf("알림 전송 실패 (%s): %v — 다음 폴링에서 재시도합니다", l.HouseName, err)
 			continue
