@@ -48,8 +48,7 @@ go run .
 
 ## 상시 구동: GitHub Actions cron
 
-개인 서버/라즈베리파이 없이도 돌릴 수 있고, 사내(NC소프트) 인프라를
-쓰지 않는다는 제약과도 맞아서 GitHub Actions의 scheduled workflow로
+개인 서버/라즈베리파이 없이도 돌릴 수 있도록 GitHub Actions의 scheduled workflow로
 구동하도록 구성했습니다 (`.github/workflows/poll.yml`, 매 6시간 실행).
 중복 알림 방지용 `seen.json`과 `competition-seen.json`은 매 실행 후 변경이 있으면 워크플로우가
 직접 리포지토리에 커밋합니다.
